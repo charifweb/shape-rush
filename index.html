@@ -1,0 +1,330 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#10162a">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Shape Rush">
+<title>Shape Rush</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E🔷%3C/text%3E%3C/svg%3E">
+<!--
+  SHAPE RUSH: one file, no dependencies. Open it in any browser, or upload it to any static host as index.html.
+  The online leaderboard is connected to the Supabase project "Shape rush" (table public.scores). The URL and publishable key
+  in ONLINE below are meant to be public: row level security only allows reading scores and adding valid ones.
+  To use a different Supabase project, run this SQL there and replace ONLINE below:
+    create table public.scores (id bigint generated always as identity primary key, tier text not null check (tier in ('beginner','intermediate','pro')), name text not null check (char_length(name) between 1 and 12), score int not null check (score between 0 and 500), avg_ms int not null check (avg_ms between 0 and 5000), created_at timestamptz not null default now());
+    create index scores_rank_idx on public.scores (tier, score desc, avg_ms asc);
+    alter table public.scores enable row level security;
+    create policy "Anyone can read scores" on public.scores for select to anon, authenticated using (true);
+    create policy "Anyone can add a valid score" on public.scores for insert to anon, authenticated with check (tier in ('beginner','intermediate','pro') and char_length(name) between 1 and 12 and score between 0 and 500 and avg_ms between 0 and 5000);
+-->
+<style>
+:root{box-sizing:border-box;padding:env(safe-area-inset-top,0px) env(safe-area-inset-right,0px) env(safe-area-inset-bottom,0px) env(safe-area-inset-left,0px);color-scheme:light dark;
+--bg:#e9edf5;--surface:#fff;--text:#101a33;--muted:#59647f;--line:#cbd3e5;--cur:#dbe3ff;--cur-text:#1b2a8a;--hl:#ffd24a;--hl-text:#2b2100;--good:#12a150;--bad:#e5484d;--on-ink:#fff}
+@media (prefers-color-scheme:dark){:root{--bg:#10162a;--surface:#1a2240;--text:#eef1fb;--muted:#9ba6c6;--line:#2c3760;--cur:#2a3a7a;--cur-text:#dfe6ff;--on-ink:#10162a}}
+html{height:100%;height:100dvh;overscroll-behavior:none;-webkit-text-size-adjust:100%}
+*,*::before,*::after{box-sizing:border-box}
+[hidden]{display:none!important}
+body{margin:0;height:100%;background:var(--bg);color:var(--text);font:16px/1.4 ui-rounded,"SF Pro Rounded",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;display:flex;justify-content:center;overscroll-behavior:none;-webkit-user-select:none;user-select:none;-webkit-tap-highlight-color:transparent}
+.app{width:100%;max-width:460px;height:100%;display:flex;flex-direction:column;gap:14px;padding:16px;overflow-y:auto}
+.board{display:flex;gap:10px}
+.box{flex:1;border-radius:16px;padding:10px 14px;display:flex;flex-direction:column}
+.box span{font-size:14px;font-weight:600}
+.box b{font-size:44px;line-height:1.05;font-weight:800;font-variant-numeric:tabular-nums}
+.now{background:var(--cur);color:var(--cur-text)}
+.top{background:var(--hl);color:var(--hl-text)}
+@media (prefers-reduced-motion:no-preference){.pop{animation:pop .45s}@keyframes pop{40%{transform:scale(1.08)}}}
+.avg{margin:-4px 2px 0;color:var(--muted);font-size:15px}
+.avg b{color:var(--text);font-variant-numeric:tabular-nums}
+.prompt{display:flex;align-items:center;gap:14px;background:var(--surface);border:1px solid var(--line);border-radius:18px;padding:12px 16px;min-height:80px}
+.prompt .shape{width:52px;height:52px;flex:none}
+.prompt small{display:block;color:var(--muted);font-size:14px;min-height:1.4em}
+.prompt strong{display:block;font-size:26px;line-height:1.1}
+.prompt strong::first-letter{text-transform:uppercase}
+.timer{display:flex;align-items:center;gap:10px}
+.track{flex:1;height:16px;border-radius:9px;background:var(--line);overflow:hidden}
+.fill{height:100%;width:100%;border-radius:9px;background:var(--text)}
+.fill.low{background:var(--bad)}
+#limit{font-weight:700;font-variant-numeric:tabular-nums;min-width:4.8em;text-align:right}
+.grid{--cell:clamp(72px,calc((100dvh - 290px - env(safe-area-inset-top,0px) - env(safe-area-inset-bottom,0px) - (var(--rows,2) - 1)*10px)/var(--rows,2)),150px);display:grid;grid-template-columns:repeat(var(--cols,3),1fr);gap:10px;align-content:start;width:100%;max-width:calc(var(--cols,3)*var(--cell) + (var(--cols,3) - 1)*10px);margin:0 auto}
+.cell{aspect-ratio:1;display:grid;place-items:center;padding:0;border:2px solid var(--line);border-radius:22px;background:var(--surface);cursor:pointer;touch-action:manipulation;-webkit-touch-callout:none}
+.cell:active{transform:scale(.95)}
+.cell.ok{border-color:var(--good);box-shadow:0 0 0 3px var(--good)}
+.cell.no{border-color:var(--bad);box-shadow:0 0 0 3px var(--bad)}
+.shape{display:block;background:var(--c)}
+.cell .shape{width:60%;height:60%}
+.s-circle{border-radius:50%}
+.s-square{border-radius:12%}
+.s-triangle{clip-path:polygon(50% 6%,96% 92%,4% 92%)}
+.s-diamond{clip-path:polygon(50% 0,100% 50%,50% 100%,0 50%)}
+.s-star{clip-path:polygon(50% 0,61% 35%,98% 35%,68% 57%,79% 91%,50% 70%,21% 91%,32% 57%,2% 35%,39% 35%)}
+.s-hexagon{clip-path:polygon(25% 4%,75% 4%,100% 50%,75% 96%,25% 96%,0 50%)}
+:focus-visible{outline:3px solid var(--text);outline-offset:3px}
+.overlay{position:fixed;inset:0;display:grid;place-items:center;padding:calc(16px + env(safe-area-inset-top,0px)) 16px calc(16px + env(safe-area-inset-bottom,0px));background:rgba(16,22,42,.66);z-index:5}
+.card{width:100%;max-width:400px;max-height:100%;overflow-y:auto;background:var(--surface);border-radius:26px;padding:24px 20px 20px;text-align:center}
+.card h1{margin:0 0 6px;font-size:30px;line-height:1.1}
+.card p{margin:0 0 16px;color:var(--muted)}
+.badge{display:inline-block;margin:-4px 0 14px;padding:4px 12px;border-radius:99px;font-weight:700;background:var(--hl);color:var(--hl-text)}
+.res{display:flex;gap:8px;margin:0 0 16px}
+.res div{flex:1;border-radius:14px;padding:8px 4px}
+.res small{display:block;font-size:13px}
+.res b{font-size:24px;font-variant-numeric:tabular-nums}
+.res .a{background:var(--cur);color:var(--cur-text)}
+.res .b{background:var(--hl);color:var(--hl-text)}
+.res .c{background:var(--bg)}
+.seg{display:flex;gap:4px;background:var(--bg);padding:4px;border-radius:14px;margin:0 0 6px}
+.seg button{flex:1;border:0;border-radius:10px;padding:10px 2px;font:inherit;font-size:14px;font-weight:700;color:var(--muted);background:none;cursor:pointer;touch-action:manipulation}
+.seg button[aria-pressed=true]{background:var(--text);color:var(--on-ink)}
+.card .lvd{margin:0 0 12px;font-size:14px}
+.nm{display:flex;align-items:center;gap:10px;margin:0 0 12px;font-weight:600;text-align:left}
+.nm input{flex:1;min-width:0;font:inherit;color:var(--text);background:var(--bg);border:1px solid var(--line);border-radius:12px;padding:10px 12px;-webkit-user-select:text;user-select:text}
+.go{width:100%;border:0;border-radius:16px;padding:16px;font:inherit;font-size:19px;font-weight:800;background:var(--text);color:var(--on-ink);cursor:pointer;touch-action:manipulation}
+.lb{margin:16px 0 0;text-align:left}
+.lb h2{margin:0 0 6px;font-size:15px}
+.lb ol{list-style:none;margin:0;padding:0;max-height:min(200px,26dvh);overflow-y:auto;counter-reset:r}
+.lb li{display:flex;gap:10px;padding:7px 10px;border-radius:10px;counter-increment:r;font-size:15px}
+.lb li:nth-child(odd){background:var(--bg)}
+.lb li.me{background:var(--cur);color:var(--cur-text)}
+.lb li::before{content:counter(r);width:1.4em;opacity:.6}
+.lb li span{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.lb li b{font-variant-numeric:tabular-nums}
+.lb li i{font-style:normal;opacity:.7;min-width:4.5em;text-align:right;font-variant-numeric:tabular-nums}
+.lb .empty{color:var(--muted)}
+.lb .empty::before{content:none}
+.lb .note{margin:8px 2px 0;font-size:13px;color:var(--muted)}
+@media (max-height:720px){
+.app{gap:8px;padding:12px}
+.box{padding:8px 12px}.box b{font-size:34px}
+.prompt{min-height:64px;padding:8px 14px}.prompt .shape{width:44px;height:44px}.prompt strong{font-size:22px}
+.card{padding:18px 16px 16px}.card h1{font-size:26px}.card p{margin-bottom:12px}
+.res{margin-bottom:12px}.res b{font-size:20px}.lb{margin-top:12px}
+}
+@media (orientation:landscape) and (max-height:520px){
+.app{max-width:none;display:grid;grid-template-columns:minmax(220px,1fr) auto;grid-template-rows:auto auto auto auto 1fr;gap:8px 16px;align-content:start}
+.app>*{grid-column:1}
+.app>.grid{grid-column:2;grid-row:1/span 5;align-self:center;width:auto;max-width:none;--cell:calc((100dvh - 40px - env(safe-area-inset-top,0px) - env(safe-area-inset-bottom,0px) - (var(--rows,2) - 1)*10px)/var(--rows,2));grid-template-columns:repeat(var(--cols,3),var(--cell))}
+.card{max-width:520px}
+}
+</style>
+</head>
+<body>
+<main class="app">
+  <section class="board" aria-label="Score">
+    <div class="box now"><span>Score</span><b id="score">0</b></div>
+    <div class="box top" id="bestBox"><span>Best</span><b id="best">0</b></div>
+  </section>
+  <div class="avg"><span id="chip"></span> · Average time <b id="avg">–</b></div>
+  <section class="prompt">
+    <span class="shape" id="tShape"></span>
+    <div><small id="tLead"></small><strong id="tName">Ready?</strong></div>
+  </section>
+  <div class="timer"><div class="track"><div class="fill" id="fill"></div></div><span id="limit"></span></div>
+  <div class="grid" id="grid"></div>
+</main>
+
+<div class="overlay" id="overlay">
+  <div class="card">
+    <h1 id="ovTitle">Shape Rush</h1>
+    <p id="ovMsg">Press the button that matches both the shape and the color shown. A wrong press or running out of time ends the run. Tap, or use keys 1 to 9.</p>
+    <div class="badge" id="nb" hidden>New best score</div>
+    <div class="res" id="res" hidden>
+      <div class="a"><small>Score</small><b id="rScore">0</b></div>
+      <div class="b"><small>Best</small><b id="rBest">0</b></div>
+      <div class="c"><small>Average</small><b id="rAvg">–</b></div>
+    </div>
+    <div class="seg" id="seg" role="group" aria-label="Difficulty"></div>
+    <p class="lvd" id="lvd"></p>
+    <label class="nm">Your name <input id="nm" maxlength="12" autocomplete="nickname" placeholder="Player"></label>
+    <button class="go" id="go" type="button">Start</button>
+    <div class="lb"><h2 id="lbTitle"></h2><ol id="lbList"></ol><p class="note" id="lbNote" hidden></p></div>
+  </div>
+</div>
+
+<script>
+(()=>{
+const SHAPES=['circle','square','triangle','diamond','star','hexagon'];
+const COLORS={red:'#e5484d',blue:'#3b82f6',green:'#22a55b',yellow:'#f5b700',purple:'#8b5cf6',orange:'#f97316'};
+const NAMES=Object.keys(COLORS);
+const LEVELS={
+  beginner:{label:'Beginner',n:4,cols:2,start:3,step:.1,min:1},
+  intermediate:{label:'Intermediate',n:6,cols:3,start:2,step:.07,min:.6},
+  pro:{label:'Pro',n:9,cols:3,start:1.5,step:.05,min:.3}
+};
+const ONLINE={url:'https://sbylehimkplrcijvrllf.supabase.co',key:'sb_publishable_EOPErJHkLvkj2AXMyJ8VOA_w_n9dsNw'}; // shared leaderboard (Supabase). A publishable key is meant to be public.
+const online=!!(ONLINE.url&&ONLINE.key);
+const $=id=>document.getElementById(id);
+const ls={get(k){try{return localStorage.getItem(k)}catch(e){return null}},set(k,v){try{localStorage.setItem(k,v)}catch(e){}}};
+const grid=$('grid'),fill=$('fill'),limitEl=$('limit'),scoreEl=$('score'),bestEl=$('best'),bestBox=$('bestBox'),avgEl=$('avg'),chip=$('chip'),
+tShape=$('tShape'),tLead=$('tLead'),tName=$('tName'),overlay=$('overlay'),ovTitle=$('ovTitle'),ovMsg=$('ovMsg'),res=$('res'),nb=$('nb'),go=$('go'),
+nm=$('nm'),seg=$('seg'),lvd=$('lvd'),lbTitle=$('lbTitle'),lbList=$('lbList'),lbNote=$('lbNote');
+let level=ls.get('shaperush-level'),L,state='idle',score=0,best=0,times=[],target=null,opts=[],limit=0,t0=0,raf=0,hiddenAt=0,newBest=false,runName='Player';
+if(!LEVELS[level])level='intermediate';
+nm.value=ls.get('shaperush-name')||'';
+
+const rnd=n=>Math.floor(Math.random()*n);
+const other=(a,x)=>{const r=a.filter(v=>v!==x);return r[rnd(r.length)]};
+const avgNum=()=>times.length?Math.round(times.reduce((a,b)=>a+b,0)/times.length):0;
+const avgMs=()=>times.length?avgNum()+' ms':'–';
+const isTarget=o=>o.shape===target.shape&&o.color===target.color;
+const paint=(el,s,c)=>{el.className='shape s-'+s;el.style.setProperty('--c',COLORS[c])};
+const nameNow=()=>(nm.value.trim()||'Player').slice(0,12);
+const store=lv=>{try{return JSON.parse(ls.get('shaperush-board-'+lv))||{}}catch(e){return{}}};
+const cmp=(a,b)=>b.score-a.score||a.avg_ms-b.avg_ms;
+const bestFor=()=>(store(level)[nameNow().toLowerCase()]||{score:0}).score;
+const showLimit=()=>{limitEl.textContent=limit.toFixed(2)+'s'+(limit<=L.min?' max':'')};
+function stats(){scoreEl.textContent=score;bestEl.textContent=best;avgEl.textContent=avgMs()}
+function bump(){bestBox.classList.remove('pop');void bestBox.offsetWidth;bestBox.classList.add('pop')}
+
+function record(name,sc,avg){
+  const m=store(level),k=name.toLowerCase(),o=m[k];
+  if(!o||sc>o.score||(sc===o.score&&avg<o.avg_ms)){m[k]={name,score:sc,avg_ms:avg};ls.set('shaperush-board-'+level,JSON.stringify(m))}
+}
+
+async function showBoard(){
+  const lv=level,me=nameNow().toLowerCase();
+  let rows=Object.values(store(lv)).sort(cmp),title=LEVELS[lv].label+' leaderboard · this device',note=online?'':'Scores stay on this device. To share one leaderboard with everyone, connect the online board (setup steps are at the top of the file).';
+  if(online){
+    title=LEVELS[lv].label+' leaderboard';
+    try{
+      const r=await fetch(ONLINE.url+'/rest/v1/scores?select=name,score,avg_ms&tier=eq.'+lv+'&order=score.desc,avg_ms.asc&limit=50',{headers:{apikey:ONLINE.key}});
+      const d=await r.json();
+      if(!Array.isArray(d))throw 0;
+      const seen=new Set();
+      rows=d.filter(x=>{const k=String(x.name).toLowerCase();if(seen.has(k))return false;seen.add(k);return true});
+    }catch(e){title=LEVELS[lv].label+' leaderboard · offline, this device';note='Could not reach the online board, so this shows scores saved on this device.'}
+  }
+  if(lv!==level)return;
+  lbTitle.textContent=title;lbNote.textContent=note;lbNote.hidden=!note;lbList.textContent='';
+  if(!rows.length){const li=document.createElement('li');li.className='empty';li.textContent='No scores yet. Be the first.';lbList.appendChild(li);return}
+  rows.slice(0,10).forEach(r=>{
+    const li=document.createElement('li'),a=document.createElement('span'),b=document.createElement('b'),c=document.createElement('i');
+    if(String(r.name).toLowerCase()===me)li.className='me';
+    a.textContent=r.name;b.textContent=r.score;c.textContent=r.avg_ms+' ms';
+    li.append(a,b,c);lbList.appendChild(li);
+  });
+}
+
+function setLevel(lv){
+  level=lv;L=LEVELS[lv];ls.set('shaperush-level',lv);
+  seg.querySelectorAll('button').forEach(b=>b.setAttribute('aria-pressed',b.dataset.lv===lv));
+  lvd.textContent=L.n+' buttons · '+L.start.toFixed(1)+'s down to '+L.min.toFixed(1)+'s';
+  chip.textContent=L.label;best=bestFor();limit=L.start;
+  grid.style.setProperty('--cols',L.cols);grid.style.setProperty('--rows',Math.ceil(L.n/L.cols));
+  stats();showLimit();showBoard();
+}
+
+function newRound(){
+  const shape=SHAPES[rnd(SHAPES.length)],color=NAMES[rnd(NAMES.length)],k=Math.floor((L.n-2)/2);
+  target={shape,color};
+  const seen=new Set([shape+color]);
+  opts=[{shape,color}];
+  const add=(s,c)=>{if(!seen.has(s+c)){seen.add(s+c);opts.push({shape:s,color:c})}};
+  while(opts.length<1+k)add(shape,other(NAMES,color));
+  while(opts.length<1+2*k)add(other(SHAPES,shape),color);
+  while(opts.length<L.n)add(other(SHAPES,shape),other(NAMES,color));
+  for(let i=opts.length-1;i>0;i--){const j=rnd(i+1);[opts[i],opts[j]]=[opts[j],opts[i]]}
+  grid.textContent='';
+  opts.forEach((o,i)=>{
+    const b=document.createElement('button'),s=document.createElement('span');
+    b.type='button';b.className='cell';b.dataset.i=i;b.setAttribute('aria-label',(i+1)+': '+o.color+' '+o.shape);
+    paint(s,o.shape,o.color);b.appendChild(s);grid.appendChild(b);
+  });
+  paint(tShape,shape,color);
+  tLead.textContent='Press the';tName.textContent=color+' '+shape;
+  showLimit();fill.classList.remove('low');
+  t0=performance.now();
+  cancelAnimationFrame(raf);
+  loop();
+}
+
+function loop(){
+  if(state!=='play')return;
+  const total=limit*1000,left=total-(performance.now()-t0);
+  if(left<=0){fill.style.width='0%';end('Too slow!',-1);return}
+  const f=left/total;
+  fill.style.width=(f*100)+'%';
+  fill.classList.toggle('low',f<.35);
+  raf=requestAnimationFrame(loop);
+}
+
+function press(i){
+  if(state!=='play')return;
+  const now=performance.now(),o=opts[i];
+  if(now-t0>limit*1000){end('Too slow!',-1);return}
+  if(isTarget(o)){
+    times.push(now-t0);score++;
+    if(score>best){best=score;newBest=true;bump()}
+    limit=Math.max(L.min,L.start-L.step*score);
+    stats();newRound();
+  }else{
+    const ws=o.shape!==target.shape,wc=o.color!==target.color;
+    end(ws&&wc?'Wrong shape and color!':ws?'Wrong shape!':'Wrong color!',i);
+  }
+}
+
+function end(reason,pressed){
+  state='over';cancelAnimationFrame(raf);if(navigator.vibrate)navigator.vibrate(pressed<0?40:80);
+  [...grid.children].forEach((c,i)=>{
+    if(isTarget(opts[i]))c.classList.add('ok');
+    else if(i===pressed)c.classList.add('no');
+  });
+  const sc=score,avg=avgNum();
+  let posted=Promise.resolve();
+  if(sc>0){
+    record(runName,sc,avg);
+    if(online)posted=fetch(ONLINE.url+'/rest/v1/scores',{method:'POST',headers:{apikey:ONLINE.key,'Content-Type':'application/json',Prefer:'return=minimal'},body:JSON.stringify({tier:level,name:runName,score:sc,avg_ms:avg})}).catch(()=>{});
+  }
+  setTimeout(()=>{
+    ovTitle.textContent=reason;
+    ovMsg.textContent='The target was the '+target.color+' '+target.shape+'.';
+    $('rScore').textContent=sc;$('rBest').textContent=best;$('rAvg').textContent=avgMs();
+    res.hidden=false;nb.hidden=!newBest;go.textContent='Play again';
+    overlay.hidden=false;go.focus();
+    posted.then(showBoard);
+  },pressed<0?500:800);
+}
+
+function start(){
+  if(state==='ready'||state==='play')return;
+  runName=nameNow();ls.set('shaperush-name',nm.value.trim());
+  state='ready';score=0;times=[];limit=L.start;newBest=false;best=bestFor();
+  overlay.hidden=true;grid.textContent='';stats();showLimit();
+  fill.style.width='100%';fill.classList.remove('low');
+  tShape.className='shape';tShape.style.removeProperty('--c');
+  tLead.textContent='';tName.textContent='Get ready…';
+  setTimeout(()=>{state='play';newRound()},800);
+}
+
+Object.entries(LEVELS).forEach(([k,v])=>{
+  const b=document.createElement('button');
+  b.type='button';b.dataset.lv=k;b.textContent=v.label;seg.appendChild(b);
+});
+seg.addEventListener('click',e=>{
+  const b=e.target.closest('button');
+  if(b&&state!=='play'&&state!=='ready')setLevel(b.dataset.lv);
+});
+nm.addEventListener('input',()=>{if(state!=='play'&&state!=='ready'){best=bestFor();stats()}});
+nm.addEventListener('change',()=>{if(state!=='play'&&state!=='ready')showBoard()});
+nm.addEventListener('keydown',e=>{if(e.key==='Enter'){nm.blur();start()}});
+grid.addEventListener('pointerdown',e=>{
+  const c=e.target.closest('.cell');
+  if(c){e.preventDefault();press(+c.dataset.i)}
+});
+grid.addEventListener('click',e=>{
+  if(e.detail===0){const c=e.target.closest('.cell');if(c)press(+c.dataset.i)}
+});
+document.addEventListener('keydown',e=>{
+  if(state==='play'&&/^[1-9]$/.test(e.key)&&+e.key<=opts.length)press(+e.key-1);
+});
+go.addEventListener('click',start);
+document.addEventListener('visibilitychange',()=>{
+  if(document.hidden){hiddenAt=performance.now()}
+  else if(hiddenAt){if(state==='play')t0+=performance.now()-hiddenAt;hiddenAt=0}
+});
+setLevel(level);
+})();
+</script>
+</body>
+</html>
